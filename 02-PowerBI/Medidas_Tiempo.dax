@@ -1,0 +1,106 @@
+// ============================================================
+// Medidas_Tiempo
+// Tabla: Fact_Inscripciones · Carpeta: "Tiempo"
+// Requiere: Dim_Calendario marcada como tabla de fechas y relación
+//           Dim_Calendario[fecha] (1) -> Fact_Inscripciones[fecha_periodo] (*)
+// Cada inscripción se ancla al primer día de su semestre.
+// "Semestre anterior" = DATEADD(-6, MONTH): los semestres del catálogo
+// son de 6 meses exactos (ene–jun y jul–dic).
+// ============================================================
+
+
+// Formato: #,0
+// Personas distintas inscritas en el semestre anterior. Solo con un periodo único en contexto.
+Personas Semestre Anterior =
+IF (
+    HASONEVALUE ( Dim_Calendario[periodo] ),
+    CALCULATE ( [Personas Distintas], DATEADD ( Dim_Calendario[fecha], -6, MONTH ) )
+)
+
+// Formato: #,0
+// Total de inscripciones del semestre anterior. Solo con un periodo único en contexto.
+Inscripciones Semestre Anterior =
+IF (
+    HASONEVALUE ( Dim_Calendario[periodo] ),
+    CALCULATE ( [Total Inscripciones], DATEADD ( Dim_Calendario[fecha], -6, MONTH ) )
+)
+
+// Formato: #,0
+// Diferencia absoluta de personas distintas frente al semestre anterior.
+Var Personas vs Semestre Anterior =
+VAR Actual = [Personas Distintas]
+VAR Anterior = [Personas Semestre Anterior]
+RETURN
+    IF ( NOT ISBLANK ( Actual ) && NOT ISBLANK ( Anterior ), Actual - Anterior )
+
+// Formato: 0.0 %
+// Variación porcentual de personas distintas frente al semestre anterior.
+% Var Personas vs Semestre Anterior =
+DIVIDE ( [Var Personas vs Semestre Anterior], [Personas Semestre Anterior] )
+
+// Formato: #,0
+// Personas distintas en el mismo semestre del año anterior.
+Personas Mismo Semestre Año Anterior =
+CALCULATE ( [Personas Distintas], SAMEPERIODLASTYEAR ( Dim_Calendario[fecha] ) )
+
+// Formato: 0.0 %
+// Variación porcentual de personas distintas frente al mismo semestre del año anterior.
+% Var Personas Interanual =
+VAR Actual = [Personas Distintas]
+VAR Anterior = [Personas Mismo Semestre Año Anterior]
+RETURN
+    IF ( NOT ISBLANK ( Actual ) && NOT ISBLANK ( Anterior ), DIVIDE ( Actual - Anterior, Anterior ) )
+
+// Formato: #,0
+// Personas distintas en el año calendario completo anterior.
+Personas Año Anterior =
+CALCULATE ( [Personas Distintas], PARALLELPERIOD ( Dim_Calendario[fecha], -1, YEAR ) )
+
+// Formato: #,0
+// Personas distintas acumuladas desde el inicio del año hasta el periodo en contexto.
+Personas Acumuladas Año =
+CALCULATE ( [Personas Distintas], DATESYTD ( Dim_Calendario[fecha] ) )
+
+// Formato: #,0
+// Inscripciones acumuladas desde el inicio del año hasta el periodo en contexto.
+Inscripciones Acumuladas Año =
+TOTALYTD ( [Total Inscripciones], Dim_Calendario[fecha] )
+
+// Formato: #,0
+// Personas inscritas tanto en el semestre actual como en el anterior.
+Personas que Continúan =
+VAR PersonasActuales =
+    VALUES ( Fact_Inscripciones[persona_key] )
+VAR PersonasAnteriores =
+    CALCULATETABLE (
+        VALUES ( Fact_Inscripciones[persona_key] ),
+        DATEADD ( Dim_Calendario[fecha], -6, MONTH )
+    )
+RETURN
+    IF (
+        HASONEVALUE ( Dim_Calendario[periodo] )
+            && NOT ISBLANK ( [Personas Distintas] )
+            && NOT ISBLANK ( [Personas Semestre Anterior] ),
+        COUNTROWS ( INTERSECT ( PersonasActuales, PersonasAnteriores ) ) + 0
+    )
+
+// Formato: 0.0 %
+// Proporción de personas del semestre anterior que se inscribieron de nuevo en el actual.
+% Continuidad =
+DIVIDE ( [Personas que Continúan], [Personas Semestre Anterior] )
+
+// Formato: #,0
+// Personas del semestre actual que no estaban inscritas en el semestre anterior.
+Personas Nuevas =
+IF (
+    NOT ISBLANK ( [Personas que Continúan] ),
+    [Personas Distintas] - [Personas que Continúan]
+)
+
+// Formato: #,0
+// Personas del semestre anterior que no se inscribieron en el semestre actual.
+Personas que No Continúan =
+IF (
+    NOT ISBLANK ( [Personas que Continúan] ),
+    [Personas Semestre Anterior] - [Personas que Continúan]
+)
